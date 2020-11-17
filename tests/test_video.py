@@ -137,7 +137,7 @@ def test_video_Movie_upload_select_remove_subtitle(movie, subtitle):
 
     try:
         os.remove(filepath)
-    except:
+    except OSError:
         pass
 
 
@@ -902,14 +902,14 @@ def test_video_exists_accessible(movie, episode):
 
 
 def test_video_edits_locked(movie, episode):
-    edits = {'titleSort.value':'New Title Sort', 'titleSort.locked': 1}
+    edits = {'titleSort.value': 'New Title Sort', 'titleSort.locked': 1}
     movieTitleSort = movie.titleSort
     movie.edit(**edits)
     movie.reload()
     for field in movie.fields:
         if field.name == 'titleSort':
             assert movie.titleSort == 'New Title Sort'
-            assert field.locked == True
+            assert field.locked
     movie.edit(**{'titleSort.value': movieTitleSort, 'titleSort.locked': 0})
 
     episodeTitleSort = episode.titleSort
@@ -918,7 +918,7 @@ def test_video_edits_locked(movie, episode):
     for field in episode.fields:
         if field.name == 'titleSort':
             assert episode.titleSort == 'New Title Sort'
-            assert field.locked == True
+            assert field.locked
     episode.edit(**{'titleSort.value': episodeTitleSort, 'titleSort.locked': 0})
 
 

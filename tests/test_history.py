@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime
-
-import pytest
-from plexapi.exceptions import BadRequest, NotFound
-
-from . import conftest as utils
-
 
 def test_history_Movie(movie):
     movie.markWatched()
@@ -37,15 +30,15 @@ def test_history_Episode(episode):
 
 
 def test_history_Artist(artist):
-    history = artist.history()
+    artist.history()
 
 
 def test_history_Album(album):
-    history = album.history()
+    album.history()
 
 
 def test_history_Track(track):
-    history = track.history()
+    track.history()
 
 
 def test_history_MyAccount(account, movie, show):
@@ -82,16 +75,16 @@ def test_history_MyServer(plex, movie):
 
 def test_history_User(account, shared_username):
     user = account.user(shared_username)
-    history = user.history()
+    user.history()
 
 
 def test_history_UserServer(account, shared_username, plex):
     userSharedServer = account.user(shared_username).server(plex.friendlyName)
-    history = userSharedServer.history()
+    userSharedServer.history()
 
 
 def test_history_UserSection(account, shared_username, plex):
     userSharedServerSection = (
         account.user(shared_username).server(plex.friendlyName).section("Movies")
     )
-    history = userSharedServerSection.history()
+    userSharedServerSection.history()

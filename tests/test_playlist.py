@@ -7,7 +7,6 @@ import pytest
 def test_create_playlist(plex, show):
     # create the playlist
     title = 'test_create_playlist_show'
-    #print('Creating playlist %s..' % title)
     episodes = show.episodes()
     playlist = plex.createPlaylist(title, episodes[:3])
     try:

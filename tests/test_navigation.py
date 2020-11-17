@@ -24,6 +24,7 @@ def test_navigate_around_artist(account, plex):
     tracks = artist.tracks()
     track = artist.track("As Colourful as Ever")
     print("Navigating around artist: %s" % artist)
+    print("Albums: %s" % albums)
     print("Album: %s" % album)
     print("Tracks: %s..." % tracks)
     print("Track: %s" % track)

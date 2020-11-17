@@ -269,7 +269,7 @@ def test_library_Colletion_edit(collection):
     for field in collection.fields:
         if field.name == 'titleSort':
             assert collection.titleSort == 'New Title Sort'
-            assert field.locked == True
+            assert field.locked
     collection.edit(**{'titleSort.value': collectionTitleSort, 'titleSort.locked': 0})
 
 

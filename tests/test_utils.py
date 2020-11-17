@@ -78,7 +78,6 @@ def test_utils_download(plex, episode):
     )
 
 
-
 def test_millisecondToHumanstr():
     res = utils.millisecondToHumanstr(1000)
     assert res == "00:00:01.0000"
