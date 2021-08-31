@@ -1,4 +1,44 @@
 # -*- coding: utf-8 -*-
+"""Client timeline subscription callback handler.
+
+Example script:
+    #!/usr/bin/env python3
+    import asyncio
+    from functools import partial
+    from plexapi.server import PlexServer
+    from plexapi.timeline import ClientTimelines
+
+    baseurl = 'https://<PLEX_SERVER_ADDRESS>:32400'
+    token = '<TOKEN>'
+
+    server = PlexServer(baseurl, token=token)
+
+    def print_timeline(client, timeline):
+        if timeline:
+            print(f"{client}: {timeline.__dict__}")
+        else:
+            print(f"{client} is stopped")
+
+    async def main(timelines):
+        for tl in timelines:
+            sub = await tl.async_subscribe()
+
+        async def before_shutdown():
+            for tl in timelines:
+                await tl.async_unsubscribe()
+
+        await asyncio.sleep(100)
+        await before_shutdown()
+
+    if __name__ == "__main__":
+        loop = asyncio.get_event_loop()
+        timelines = []
+        for client in server.clients():
+            callback = partial(print_timeline, client)
+            timelines.append(ClientTimelines(client, callback=callback))
+        loop.run_until_complete(main(timelines))
+"""
+
 import asyncio
 import socket
 import threading
