@@ -7,6 +7,7 @@ from plexapi import BASE_HEADERS, CONFIG, TIMEOUT, log, logfilter, utils
 from plexapi.base import PlexObject
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized, Unsupported
 from plexapi.playqueue import PlayQueue
+from plexapi.timeline import ClientTimelines
 from requests.status_codes import _codes as codes
 
 DEFAULT_MTYPE = 'video'
@@ -72,8 +73,7 @@ class PlexClient(PlexObject):
         self._proxyThroughServer = False
         self._commandId = 0
         self._last_call = 0
-        self._timeline_cache = []
-        self._timeline_cache_timestamp = 0
+        self._timelines = ClientTimelines(self)
         if not any([data is not None, initpath, baseurl, token]):
             self._baseurl = CONFIG.get('auth.client_baseurl', 'http://localhost:32433')
             self._token = logfilter.add_secret(CONFIG.get('auth.client_token'))
@@ -222,7 +222,7 @@ class PlexClient(PlexObject):
             self._last_call = t
         elif t - self._last_call >= 80 and self.product in ('ptp', 'Plex Media Player'):
             self._last_call = t
-            self.sendCommand(ClientTimeline.key, wait=0)
+            self._timelines.poll()
 
         params['commandID'] = self._nextCommandId()
         key = '/player/%s%s' % (command, utils.joinArgs(params))
@@ -568,18 +568,13 @@ class PlexClient(PlexObject):
            Some clients may not always respond to timeline requests, believe this
            to be a Plex bug.
         """
-        t = time.time()
-        if t - self._timeline_cache_timestamp > 1:
-            self._timeline_cache_timestamp = t
-            timelines = self.sendCommand(ClientTimeline.key, wait=wait) or []
-            self._timeline_cache = [ClientTimeline(self, data) for data in timelines]
-
-        return self._timeline_cache
+        self._timelines.poll(wait=wait)
+        return [tl for tl in self._timelines.timelines.values()]
 
     @property
     def timeline(self):
         """Returns the active timeline object."""
-        return next((x for x in self.timelines() if x.state != 'stopped'), None)
+        return self._timelines.poll()
 
     def isPlayingMedia(self, includePaused=True):
         """Returns True if any media is currently playing.
@@ -590,41 +585,3 @@ class PlexClient(PlexObject):
         """
         state = getattr(self.timeline, "state", None)
         return bool(state == 'playing' or (includePaused and state == 'paused'))
-
-
-class ClientTimeline(PlexObject):
-    """Get the timeline's attributes."""
-
-    key = 'timeline/poll'
-
-    def _loadData(self, data):
-        self._data = data
-        self.address = data.attrib.get('address')
-        self.audioStreamId = utils.cast(int, data.attrib.get('audioStreamId'))
-        self.autoPlay = utils.cast(bool, data.attrib.get('autoPlay'))
-        self.containerKey = data.attrib.get('containerKey')
-        self.controllable = data.attrib.get('controllable')
-        self.duration = utils.cast(int, data.attrib.get('duration'))
-        self.itemType = data.attrib.get('itemType')
-        self.key = data.attrib.get('key')
-        self.location = data.attrib.get('location')
-        self.machineIdentifier = data.attrib.get('machineIdentifier')
-        self.partCount = utils.cast(int, data.attrib.get('partCount'))
-        self.partIndex = utils.cast(int, data.attrib.get('partIndex'))
-        self.playQueueID = utils.cast(int, data.attrib.get('playQueueID'))
-        self.playQueueItemID = utils.cast(int, data.attrib.get('playQueueItemID'))
-        self.playQueueVersion = utils.cast(int, data.attrib.get('playQueueVersion'))
-        self.port = utils.cast(int, data.attrib.get('port'))
-        self.protocol = data.attrib.get('protocol')
-        self.providerIdentifier = data.attrib.get('providerIdentifier')
-        self.ratingKey = utils.cast(int, data.attrib.get('ratingKey'))
-        self.repeat = utils.cast(bool, data.attrib.get('repeat'))
-        self.seekRange = data.attrib.get('seekRange')
-        self.shuffle = utils.cast(bool, data.attrib.get('shuffle'))
-        self.state = data.attrib.get('state')
-        self.subtitleColor = data.attrib.get('subtitleColor')
-        self.subtitlePosition = data.attrib.get('subtitlePosition')
-        self.subtitleSize = utils.cast(int, data.attrib.get('subtitleSize'))
-        self.time = utils.cast(int, data.attrib.get('time'))
-        self.type = data.attrib.get('type')
-        self.volume = utils.cast(int, data.attrib.get('volume'))
