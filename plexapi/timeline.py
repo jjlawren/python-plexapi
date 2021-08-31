@@ -13,8 +13,37 @@ DEFAULT_LISTEN_PORT = 32500
 TIMELINE_TYPES = ["music", "photo", "video"]
 
 
-class ClientTimelineEventHandler:
+class SubscriptionsMap:
     def __init__(self):
+        self.subscriptions = {}
+        self.subscriptions_lock = threading.Lock()
+
+    def register(self, subscription):
+        self.subscriptions[subscription.client.machineIdentifier] = subscription
+
+    def unregister(self, subscription):
+        """Unregister a subscription"""
+        with self.subscriptions_lock:
+            try:
+                del self.subscriptions[subscription.client.machineIdentifier]
+            except KeyError:
+                pass
+
+    def get_subscription(self, machineIdentifier):
+        """Look up a subscription"""
+        with self.subscriptions_lock:
+            return self.subscriptions.get(machineIdentifier)
+
+    @property
+    def count(self):
+        """
+        `int`: The number of active subscriptions.
+        """
+        return len(self.subscriptions)
+
+
+class ClientTimelineEventHandler:
+    def __init__(self, subscriptions_map):
         self.subscriptions_map = subscriptions_map
 
     async def timeline_callback(self, request):
@@ -44,6 +73,9 @@ class ClientTimelineEventHandler:
 
 
 class ClientTimelineEventListener:
+
+    subscriptions_map = SubscriptionsMap()
+
     def __init__(self, port=None):
         super().__init__()
         self.sock = None
@@ -117,7 +149,7 @@ class ClientTimelineEventListener:
 
     async def _async_start(self):
         """Start the subscription listener."""
-        handler = ClientTimelineEventHandler()
+        handler = ClientTimelineEventHandler(self.subscriptions_map)
         app = web.Application()
         app.add_routes([web.route("post", "/:/timeline", handler.timeline_callback)])
         self.runner = web.AppRunner(app)
@@ -145,6 +177,9 @@ class ClientTimelineEventListener:
 
 
 class ClientTimelines:
+
+    event_listener = ClientTimelineEventListener()
+
     def __init__(self, client, data=None, callback=None):
         self.client = client
         self.callback = callback
@@ -153,8 +188,7 @@ class ClientTimelines:
         if "127.0.0.1" in client._baseurl:
             self.client.proxyThroughServer(True)
 
-        self.event_listener = event_listener
-        self.subscriptions_map = subscriptions_map
+        self.subscriptions_map = self.event_listener.subscriptions_map
         self._auto_renew_task = None
 
         self.is_subscribed = False
@@ -344,36 +378,3 @@ class ClientTimeline(PlexObject):
                 if p
             ]
         )
-
-
-class SubscriptionsMap:
-    def __init__(self):
-        self.subscriptions = {}
-        self.subscriptions_lock = threading.Lock()
-
-    def register(self, subscription):
-        self.subscriptions[subscription.client.machineIdentifier] = subscription
-
-    def unregister(self, subscription):
-        """Unregister a subscription"""
-        with self.subscriptions_lock:
-            try:
-                del self.subscriptions[subscription.client.machineIdentifier]
-            except KeyError:
-                pass
-
-    def get_subscription(self, machineIdentifier):
-        """Look up a subscription"""
-        with self.subscriptions_lock:
-            return self.subscriptions.get(machineIdentifier)
-
-    @property
-    def count(self):
-        """
-        `int`: The number of active subscriptions.
-        """
-        return len(self.subscriptions)
-
-
-event_listener = ClientTimelineEventListener()
-subscriptions_map = SubscriptionsMap()
