@@ -4,17 +4,17 @@ from xml.etree import ElementTree
 
 import requests
 from plexapi import BASE_HEADERS, CONFIG, TIMEOUT, log, logfilter, utils
-from plexapi.base import PlexObject
+from plexapi.base import PlexDevice, PlexObject
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized, Unsupported
 from plexapi.playqueue import PlayQueue
-from plexapi.timeline import ClientTimelines
+from plexapi.timeline import ClientTimelineManager
 from requests.status_codes import _codes as codes
 
 DEFAULT_MTYPE = 'video'
 
 
 @utils.registerPlexObject
-class PlexClient(PlexObject):
+class PlexClient(PlexObject, PlexDevice):
     """ Main class for interacting with a Plex client. This class can connect
         directly to the client and control it or proxy commands through your
         Plex Server. To better understand the Plex client API's read this page:
@@ -70,10 +70,11 @@ class PlexClient(PlexObject):
         self._showSecrets = CONFIG.get('log.show_secrets', '').lower() == 'true'
         server_session = server._session if server else None
         self._session = session or server_session or requests.Session()
+        self._async_session = None
         self._proxyThroughServer = False
         self._commandId = 0
         self._last_call = 0
-        self._timelines = ClientTimelines(self)
+        self._timelines = ClientTimelineManager(self)
         if not any([data is not None, initpath, baseurl, token]):
             self._baseurl = CONFIG.get('auth.client_baseurl', 'http://localhost:32433')
             self._token = logfilter.add_secret(CONFIG.get('auth.client_token'))

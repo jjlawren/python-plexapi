@@ -7,7 +7,7 @@ from plexapi import (BASE_HEADERS, CONFIG, TIMEOUT, X_PLEX_CONTAINER_SIZE, log,
                      logfilter)
 from plexapi import utils
 from plexapi.alert import AlertListener
-from plexapi.base import PlexObject
+from plexapi.base import PlexDevice, PlexObject
 from plexapi.client import PlexClient
 from plexapi.collection import Collection
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized
@@ -28,7 +28,7 @@ from plexapi import playlist as _playlist  # noqa: F401
 from plexapi import video as _video  # noqa: F401
 
 
-class PlexServer(PlexObject):
+class PlexServer(PlexObject, PlexDevice):
     """ This is the main entry point to interacting with a Plex server. It allows you to
         list connected clients, browse your library sections and perform actions such as
         emptying trash. If you do not know the auth token required to access your Plex
@@ -107,6 +107,7 @@ class PlexServer(PlexObject):
         self._token = logfilter.add_secret(token or CONFIG.get('auth.server_token'))
         self._showSecrets = CONFIG.get('log.show_secrets', '').lower() == 'true'
         self._session = session or requests.Session()
+        self._async_session = None
         self._timeout = timeout
         self._library = None   # cached library
         self._settings = None   # cached settings

@@ -3,10 +3,11 @@
 
 Example script:
     #!/usr/bin/env python3
+    from aiohttp import ClientSession
     import asyncio
     from functools import partial
     from plexapi.server import PlexServer
-    from plexapi.timeline import ClientTimelines
+    from plexapi.timeline import ClientTimelineManager
 
     baseurl = 'https://<PLEX_SERVER_ADDRESS>:32400'
     token = '<TOKEN>'
@@ -20,23 +21,24 @@ Example script:
             print(f"{client} is stopped")
 
     async def main(timelines):
-        for tl in timelines:
-            sub = await tl.async_subscribe()
+        session = ClientSession()
+        timelines = []
+        for client in server.clients():
+            callback = partial(print_timeline, client)
+            tl = ClientTimelineManager(client, callback=callback, session=session)
+            await tl.async_subscribe()
+            timelines.append(tl)
 
         async def before_shutdown():
             for tl in timelines:
                 await tl.async_unsubscribe()
+            await session.close()
 
         await asyncio.sleep(100)
         await before_shutdown()
 
     if __name__ == "__main__":
-        loop = asyncio.get_event_loop()
-        timelines = []
-        for client in server.clients():
-            callback = partial(print_timeline, client)
-            timelines.append(ClientTimelines(client, callback=callback))
-        loop.run_until_complete(main(timelines))
+        asyncio.run(main())
 """
 
 import asyncio
@@ -82,7 +84,7 @@ class SubscriptionsMap:
         return len(self.subscriptions)
 
 
-class ClientTimelineEventHandler:
+class EventHandler:
     def __init__(self, subscriptions_map):
         self.subscriptions_map = subscriptions_map
 
@@ -112,7 +114,7 @@ class ClientTimelineEventHandler:
         return web.Response(text="OK", status=200)
 
 
-class ClientTimelineEventListener:
+class EventListener:
 
     subscriptions_map = SubscriptionsMap()
 
@@ -126,7 +128,6 @@ class ClientTimelineEventListener:
         self.requested_port = port or DEFAULT_LISTEN_PORT
         self.runner = None
         self.site = None
-        self.session = None
         self.start_lock = None
 
     async def async_start(self, ip_address):
@@ -145,7 +146,6 @@ class ClientTimelineEventListener:
             if not port:
                 return
             self.address = (ip_address, port)
-            self.session = ClientSession(raise_for_status=True)
             self.is_running = True
             log.debug("Event Listener started on %s", port)
 
@@ -157,8 +157,7 @@ class ClientTimelineEventListener:
 
         Make sure that your firewall allows inbound connections to this port.
 
-        Handling of requests is delegated to an instance of the
-        `ClientTimelineEventHandler` class.
+        Handling of requests is delegated to an `EventHandler` instance.
 
         Args:
             ip_address (str): The IP address of the local interface to listen on.
@@ -189,7 +188,7 @@ class ClientTimelineEventListener:
 
     async def _async_start(self):
         """Start the subscription listener."""
-        handler = ClientTimelineEventHandler(self.subscriptions_map)
+        handler = EventHandler(self.subscriptions_map)
         app = web.Application()
         app.add_routes([web.route("post", "/:/timeline", handler.timeline_callback)])
         self.runner = web.AppRunner(app)
@@ -206,9 +205,6 @@ class ClientTimelineEventListener:
         if self.runner:
             await self.runner.cleanup()
             self.runner = None
-        if self.session:
-            await self.session.close()
-            self.session = None
         if self.sock:
             self.sock.close()
             self.sock = None
@@ -216,14 +212,16 @@ class ClientTimelineEventListener:
         self.ip_address = None
 
 
-class ClientTimelines:
+class ClientTimelineManager:
+    """Client timeline and subscription manager."""
 
-    event_listener = ClientTimelineEventListener()
+    event_listener = EventListener()
 
-    def __init__(self, client, data=None, callback=None):
+    def __init__(self, client, data=None, callback=None, session=None):
         self.client = client
         self.callback = callback
         self.timelines = {}
+        self.session = session
 
         if "127.0.0.1" in client._baseurl:
             self.client.proxyThroughServer(True)
@@ -258,6 +256,48 @@ class ClientTimelines:
             return
         return self.update(timelines)
 
+    async def async_sendCommand(self, command, proxy=None, **params):
+        """ Convenience wrapper around :func:`~plexapi.client.PlexClient.async_query` to more easily
+            send simple commands to a client. Returns an ElementTree object containing
+            the response.
+
+            Parameters:
+                client (PlexClient): The Plex client to direct the command.
+                command (str): Command to be sent in for format '<controller>/<command>'.
+                proxy (bool): Set True to proxy this command through the PlexServer.
+                **params (dict): Additional GET parameters to include with the command.
+
+            Raises:
+                :exc:`~plexapi.exceptions.Unsupported`: When we detect the client doesn't support this capability.
+        """
+        command = command.strip('/')
+        controller = command.split('/')[0]
+        headers = {'X-Plex-Target-Client-Identifier': self.client.machineIdentifier}
+        if controller not in self.client.protocolCapabilities:
+            log.debug("Client %s doesn't support %s controller, "
+                      "this command may not work", self.client.title, controller)
+
+        proxy = self.client._proxyThroughServer if proxy is None else proxy
+        async_query = self.client._server.async_query if proxy else self.client.async_query
+
+        params["commandID"] = self.client._nextCommandId()
+        key = f"/player/{command}{utils.joinArgs(params)}"
+
+        try:
+            return await async_query(key, headers=headers)
+        except ElementTree.ParseError:
+            # Workaround for players which don't return valid XML on successful commands
+            #   - Plexamp, Plex for Android: `b'OK'`
+            #   - Plex for Samsung: `b'<?xml version="1.0"?><Response code="200" status="OK">'`
+            if self.client.product in (
+                'Plexamp',
+                'Plex for Android (TV)',
+                'Plex for Android (Mobile)',
+                'Plex for Samsung',
+            ):
+                return
+            raise
+
     async def _async_cancel_subscription(self):
         self.subscriptions_map.unregister(self)
         if self.subscriptions_map.count == 0:
@@ -290,18 +330,26 @@ class ClientTimelines:
             self._auto_renew_task.cancel()
             self._auto_renew_task = None
 
-    def _subscribe(self):
-        return self.client.sendCommand(
+    async def _async_subscribe(self):
+        return await self.async_sendCommand(
             "/timeline/subscribe", protocol="http", port=self.event_listener.port
         )
 
     async def async_subscribe(self, auto_renew=True):
+        if not self.session:
+            self.session = ClientSession()
+
+        if not self.client._async_session:
+            self.client._async_session = self.session
+        if not self.client._server._async_session:
+            self.client._server._async_session = self.session
+
         log.debug("Subscribing to %s", self.client)
         try:
             if not self.event_listener.is_running:
                 await self.event_listener.async_start("10.0.10.66")
             self.subscriptions_map.register(self)
-            await asyncio.get_event_loop().run_in_executor(None, self._subscribe)
+            await self._async_subscribe()
         except BadRequest as exc:
             log.warning("Subscription to %s failed: %s", self.client, exc)
             await self.async_unsubscribe()
@@ -324,10 +372,7 @@ class ClientTimelines:
         if not self.is_subscribed:
             raise Exception("Cannot renew subscription before subscribing")
 
-        return await asyncio.get_event_loop().run_in_executor(
-            None,
-            self._subscribe,
-        )
+        await self._async_subscribe()
 
     def _unsubscribe(self):
         return self.client.sendCommand("/timeline/unsubscribe")
@@ -338,8 +383,7 @@ class ClientTimelines:
             return None
 
         await self._async_cancel_subscription()
-        result = await asyncio.get_event_loop().run_in_executor(None, self._unsubscribe)
-        return result
+        return await self.async_sendCommand("/timeline/unsubscribe")
 
     def send_event(self, timeline):
         if self.callback and hasattr(self.callback, "__call__"):

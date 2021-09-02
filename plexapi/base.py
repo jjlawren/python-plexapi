@@ -4,8 +4,9 @@ import weakref
 from urllib.parse import quote_plus, urlencode
 from xml.etree import ElementTree
 
-from plexapi import log, utils
-from plexapi.exceptions import BadRequest, NotFound, UnknownType, Unsupported
+import aiohttp
+from plexapi import log, utils, TIMEOUT
+from plexapi.exceptions import BadRequest, NotFound, Unauthorized, UnknownType, Unsupported
 
 USER_DONT_RELOAD_FOR_KEYS = set()
 _DONT_RELOAD_FOR_KEYS = {'key', 'session'}
@@ -760,3 +761,30 @@ class MediaContainer(PlexObject):
         self.mediaTagPrefix = data.attrib.get('mediaTagPrefix')
         self.mediaTagVersion = data.attrib.get('mediaTagVersion')
         self.size = utils.cast(int, data.attrib.get('size'))
+
+
+class PlexDevice(object):
+
+    async def async_query(self, key, method=None, headers=None, timeout=None, **kwargs):
+        """ Async method used to handle requests to the Plex device.
+            Encodes the response to utf-8 and parses the returned XML into an
+            ElementTree object. Returns None if no data exists in the response.
+        """
+        url = self.url(key)
+        method = method or self._async_session.get
+        timeout = timeout or TIMEOUT
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        log.debug('%s %s', method.__name__.upper(), url)
+        headers = self._headers(**headers or {})
+        async with method(url, headers=headers, timeout=client_timeout, **kwargs) as response:
+            text = await response.text(encoding="utf8")
+            if not response.ok:
+                errtext = text.replace('\n', ' ')
+                message = '(%s) %s; %s %s' % (response.status, response.reason, response.url, errtext)
+                if response.status == 401:
+                    raise Unauthorized(message)
+                elif response.status == 404:
+                    raise NotFound(message)
+                else:
+                    raise BadRequest(message)
+        return ElementTree.fromstring(text) if text.strip() else None
