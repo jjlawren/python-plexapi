@@ -116,7 +116,6 @@ class EventListener:
 
     def __init__(self, port=None):
         """Initialize the EventListener."""
-        super().__init__()
         self.sock = None
         self.address = ()
         self.ip_address = None
@@ -252,8 +251,12 @@ class ClientTimelineManager:
     @classmethod
     async def async_unsubscribe_all(cls):
         """Unsubscribe from all active timeline subscriptions."""
-        for subscription in cls.subscriptions_map.all():
-            await subscription.async_unsubscribe()
+        await asyncio.gather(
+            *(
+                subscription.async_unsubscribe()
+                for subscription in cls.subscriptions_map.all()
+            )
+        )
 
     def update(self, data):
         """Update the cache of timelines using ElementTree data."""
