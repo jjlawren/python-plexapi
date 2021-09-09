@@ -101,13 +101,13 @@ class PlexServer(PlexObject, PlexDevice):
     """
     key = '/'
 
-    def __init__(self, baseurl=None, token=None, session=None, timeout=None):
+    def __init__(self, baseurl=None, token=None, session=None, timeout=None, async_session=None):
         self._baseurl = baseurl or CONFIG.get('auth.server_baseurl', 'http://localhost:32400')
         self._baseurl = self._baseurl.rstrip('/')
         self._token = logfilter.add_secret(token or CONFIG.get('auth.server_token'))
         self._showSecrets = CONFIG.get('log.show_secrets', '').lower() == 'true'
         self._session = session or requests.Session()
-        self._async_session = None
+        self._async_session = async_session
         self._timeout = timeout
         self._library = None   # cached library
         self._settings = None   # cached settings

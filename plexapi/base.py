@@ -5,8 +5,10 @@ from urllib.parse import quote_plus, urlencode
 from xml.etree import ElementTree
 
 import aiohttp
-from plexapi import log, utils, TIMEOUT
-from plexapi.exceptions import BadRequest, NotFound, Unauthorized, UnknownType, Unsupported
+
+from plexapi import TIMEOUT, log, utils
+from plexapi.exceptions import (BadRequest, NotFound, Unauthorized,
+                                UnknownType, Unsupported)
 
 USER_DONT_RELOAD_FOR_KEYS = set()
 _DONT_RELOAD_FOR_KEYS = {'key', 'session'}
@@ -770,6 +772,8 @@ class PlexDevice(object):
             Encodes the response to utf-8 and parses the returned XML into an
             ElementTree object. Returns None if no data exists in the response.
         """
+        if not self._async_session:
+            self._async_session = aiohttp.Session()
         url = self.url(key)
         method = method or self._async_session.get
         timeout = timeout or TIMEOUT

@@ -3,12 +3,13 @@ import time
 from xml.etree import ElementTree
 
 import requests
+from requests.status_codes import _codes as codes
+
 from plexapi import BASE_HEADERS, CONFIG, TIMEOUT, log, logfilter, utils
 from plexapi.base import PlexDevice, PlexObject
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized, Unsupported
 from plexapi.playqueue import PlayQueue
-from plexapi.timeline import ClientTimelineManager
-from requests.status_codes import _codes as codes
+from plexapi.timeline import ClientTimeline
 
 DEFAULT_MTYPE = 'video'
 
@@ -62,7 +63,7 @@ class PlexClient(PlexObject, PlexDevice):
     key = '/resources'
 
     def __init__(self, server=None, data=None, initpath=None, baseurl=None,
-          identifier=None, token=None, connect=True, session=None, timeout=None):
+          identifier=None, token=None, connect=True, session=None, timeout=None, async_session=None):
         super(PlexClient, self).__init__(server, data, initpath)
         self._baseurl = baseurl.strip('/') if baseurl else None
         self._clientIdentifier = identifier
@@ -70,11 +71,13 @@ class PlexClient(PlexObject, PlexDevice):
         self._showSecrets = CONFIG.get('log.show_secrets', '').lower() == 'true'
         server_session = server._session if server else None
         self._session = session or server_session or requests.Session()
-        self._async_session = None
+        async_server_session = server._async_session if server else None
+        self._async_session = async_session or async_server_session
         self._proxyThroughServer = False
         self._commandId = 0
         self._last_call = 0
-        self._timelines = ClientTimelineManager(self)
+        self._timeline_cache = []
+        self._timeline_cache_timestamp = 0
         if not any([data is not None, initpath, baseurl, token]):
             self._baseurl = CONFIG.get('auth.client_baseurl', 'http://localhost:32433')
             self._token = logfilter.add_secret(CONFIG.get('auth.client_token'))
@@ -223,7 +226,7 @@ class PlexClient(PlexObject, PlexDevice):
             self._last_call = t
         elif t - self._last_call >= 80 and self.product in ('ptp', 'Plex Media Player'):
             self._last_call = t
-            self._timelines.poll()
+            self.sendCommand('timeline/poll', wait=0)
 
         params['commandID'] = self._nextCommandId()
         key = '/player/%s%s' % (command, utils.joinArgs(params))
@@ -569,13 +572,18 @@ class PlexClient(PlexObject, PlexDevice):
            Some clients may not always respond to timeline requests, believe this
            to be a Plex bug.
         """
-        self._timelines.poll(wait=wait)
-        return [tl for tl in self._timelines.timelines.values()]
+        t = time.time()
+        if t - self._timeline_cache_timestamp > 1:
+            self._timeline_cache_timestamp = t
+            timelines = self.sendCommand('timeline/poll', wait=wait) or []
+            self._timeline_cache = [ClientTimeline(self, data) for data in timelines]
+
+        return self._timeline_cache
 
     @property
     def timeline(self):
         """Returns the active timeline object."""
-        return self._timelines.poll()
+        return next((x for x in self.timelines() if x.state != 'stopped'), None)
 
     def isPlayingMedia(self, includePaused=True):
         """Returns True if any media is currently playing.
