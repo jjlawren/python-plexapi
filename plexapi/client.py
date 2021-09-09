@@ -585,6 +585,13 @@ class PlexClient(PlexObject, PlexDevice):
         """Returns the active timeline object."""
         return next((x for x in self.timelines() if x.state != 'stopped'), None)
 
+    @property
+    def timeline_manager(self):
+        """Return the ClientTimelineManager instance for this client or None."""
+        return ClientTimelineManager.subscriptions_map.get_subscription(
+            self.machineIdentifier
+        )
+
     def isPlayingMedia(self, includePaused=True):
         """Returns True if any media is currently playing.
 

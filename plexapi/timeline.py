@@ -237,10 +237,15 @@ class ClientTimelineManager:
         self.is_subscribed = False
         self._failed_autorenews = 0
         self._retry_limit = 3
+        self.subscriptions_map.register(self)
 
     @classmethod
     def get_or_create(cls, client, callback=None, session=None):
         """Return an existing matching subscription for this client or create a new one."""
+        if not client._baseurl:
+            log.debug("No baseurl available for %s, skipping", client)
+            return None
+
         timeline_manager = cls.subscriptions_map.get_subscription(
             client.machineIdentifier
         )
@@ -303,7 +308,7 @@ class ClientTimelineManager:
         headers = {"X-Plex-Target-Client-Identifier": self.client.machineIdentifier}
         if controller not in self.client.protocolCapabilities:
             raise Unsupported(
-                f"Client {self.client.title} does not support {controller} controls"
+                f"{self.client.title} ({self.client.product}) does not support '{controller}' {self.client.protocolCapabilities}"
             )
 
         proxy = self.client._proxyThroughServer if proxy is None else proxy
@@ -389,7 +394,6 @@ class ClientTimelineManager:
                 await self.event_listener.async_start("10.0.10.66")
 
             try:
-                self.subscriptions_map.register(self)
                 await self._async_subscribe()
             except (
                 BadRequest,
