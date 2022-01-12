@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 from urllib.parse import quote_plus
+from uuid import uuid4
 
 from plexapi import library, media, utils
 from plexapi.base import Playable, PlexPartialObject
@@ -8,6 +9,7 @@ from plexapi.exceptions import BadRequest
 from plexapi.mixins import AdvancedSettingsMixin, ArtUrlMixin, ArtMixin, PosterUrlMixin, PosterMixin
 from plexapi.mixins import RatingMixin, SplitMergeMixin, UnmatchMatchMixin
 from plexapi.mixins import CollectionMixin, CountryMixin, GenreMixin, LabelMixin, MoodMixin, SimilarArtistMixin, StyleMixin
+from plexapi.playqueue import PlayQueue
 
 
 class Audio(PlexPartialObject):
@@ -221,6 +223,23 @@ class Artist(Audio, AdvancedSettingsMixin, ArtMixin, PosterMixin, RatingMixin, S
             _savepath = os.path.join(savepath, track.parentTitle) if subfolders else savepath
             filepaths += track.download(_savepath, keep_original_name, **kwargs)
         return filepaths
+
+    def radio_station(self, repeat=0, **kwargs):
+        """Returns a :class:`~plexapi.playqueue.PlayQueue` radio station for this artist."""
+        args = {
+            "includeChapters": 1,
+            "includeMarkers": 1,
+            "repeat": repeat,
+            "type": "audio",
+            "uri": f"server://{self._server.machineIdentifier}/com.plexapp.plugins.library{self.key}/station/{uuid4()}?type=10&includeSharedContent=1",
+        }
+
+        path = "/playQueues{args}".format(args=utils.joinArgs(args))
+        data = self._server.query(path, method=self._server._session.post)
+        pq = PlayQueue(self._server, data, initpath=path)
+        pq.playQueueType = args["type"]
+        pq._server = self._server
+        return pq
 
 
 @utils.registerPlexObject
